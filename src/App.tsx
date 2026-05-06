@@ -81,7 +81,7 @@ export default function App() {
     const currentDimensions = overrideDimensions || imageDimensions;
 
     try {
-      const activeApiKey = apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
+      const activeApiKey = apiKey;
       
       if (!activeApiKey) {
         const msg = 'API Key Missing. Please set your Gemini API key in Settings.';
@@ -110,12 +110,12 @@ export default function App() {
                 },
               },
               {
-                text: "Perform extremely accurate OCR on this image focusing on Simplified Chinese. \n" +
-                      "1. Extract all original Chinese text as 'fullText'.\n" +
-                      "2. Translate the full text into natural, professional English as 'translatedText'.\n" +
-                      "3. Identify each distinct text area (like speech bubbles, captions, or paragraphs) as a 'textBlock'. \n" +
-                      "For each 'textBlock', provide the original Chinese 'text', its English 'translatedText', and its 'bbox' as [ymin, xmin, ymax, xmax] in normalized coordinates (0-1000).\n" +
-                      "Return the result as a strict JSON object following the provided schema.",
+                text: "Perform extremely accurate OCR on this image focusing only on the text characters within Simplified Chinese speech bubbles and captions.\n" +
+                      "1. Identify every individual text block. Extract the original Chinese text.\n" +
+                      "2. Provide a TIGHT 'bbox' as [ymin, xmin, ymax, xmax] in normalized coordinates (0-1000) that encloses ONLY the text characters. Do NOT include the speech bubble borders or background empty space.\n" +
+                      "3. Translate the text naturally into English.\n" +
+                      "4. Provide a 'fullText' transcription and a 'translatedText' summary.\n" +
+                      "Return only strict JSON.",
               },
             ],
           },
@@ -177,6 +177,7 @@ export default function App() {
           text: w.text,
           translatedText: w.translatedText,
           confidence: 100,
+          bgColor: 'white', // Default to pure white as requested
           bbox: {
             x0: (w.bbox[1] / 1000) * currentDimensions.width,
             y0: (w.bbox[0] / 1000) * currentDimensions.height,
@@ -184,29 +185,7 @@ export default function App() {
             y1: (w.bbox[2] / 1000) * currentDimensions.height,
           }
         }));
-
-        // After setting results, if image is already loaded, sample colors immediately
-        if (imageRef.current && imageRef.current.complete) {
-          const canvas = document.createElement('canvas');
-          canvas.width = 1;
-          canvas.height = 1;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          
-          const enrichedWithColors = ocrResults.map(res => {
-            if (ctx && imageRef.current) {
-              // Sample just below the box to get background color without text interference
-              const sampleX = res.bbox.x0 + (res.bbox.x1 - res.bbox.x0) / 2;
-              const sampleY = Math.min(res.bbox.y1 + 10, currentDimensions.height - 1);
-              ctx.drawImage(imageRef.current, sampleX, sampleY, 1, 1, 0, 0, 1, 1);
-              const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-              return { ...res, bgColor: `rgb(${r}, ${g}, ${b})` };
-            }
-            return res;
-          });
-          setResults(enrichedWithColors);
-        } else {
-          setResults(ocrResults);
-        }
+        setResults(ocrResults);
       } else if (blocks.length === 0) {
         console.warn('No text blocks returned from Vision AI');
       }
@@ -221,7 +200,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [imageDimensions]);
+  }, [apiKey, imageDimensions]); // Added apiKey to dependency array
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -285,27 +264,6 @@ export default function App() {
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const { naturalWidth, naturalHeight } = e.currentTarget;
     setImageDimensions({ width: naturalWidth, height: naturalHeight });
-
-    // Sample colors if results exist but don't have bgColors
-    if (results.length > 0 && results.some(r => !r.bgColor)) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1;
-      canvas.height = 1;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      
-      const enrichedResults = results.map(res => {
-        if (ctx && imageRef.current && !res.bgColor) {
-          // Sample just below the box to get background color without text interference
-          const sampleX = res.bbox.x0 + (res.bbox.x1 - res.bbox.x0) / 2;
-          const sampleY = Math.min(res.bbox.y1 + 10, imageDimensions.height - 1);
-          ctx.drawImage(imageRef.current, sampleX, sampleY, 1, 1, 0, 0, 1, 1);
-          const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-          return { ...res, bgColor: `rgb(${r}, ${g}, ${b})` };
-        }
-        return res;
-      });
-      setResults(enrichedResults);
-    }
   };
 
   const reset = () => {
@@ -481,10 +439,10 @@ export default function App() {
                   </div>
 
                   {loading && (
-                    <div className="absolute inset-0 z-20 bg-white/60 backdrop-blur-sm flex flex-col items-center justify-center p-8 text-center">
+                    <div className="absolute inset-0 z-20 bg-white/40 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center">
                       <div className="w-full max-w-xs space-y-4">
                         <div className="relative">
-                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="w-full h-2 bg-gray-100/30 rounded-full overflow-hidden">
                             <motion.div
                               initial={{ width: 0 }}
                               animate={{ width: `${progress}%` }}
@@ -503,20 +461,20 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="relative bg-gray-50">
-                    <div className="flex items-center justify-center relative p-4 sm:p-8">
+                  <div className="relative bg-gray-50/50">
+                    <div className="flex items-center justify-center relative p-2 sm:p-4">
                       <div className="relative">
                         <img 
                           ref={imageRef}
                           src={image} 
                           alt="OCR Source" 
-                          className="max-w-full h-auto shadow-xl"
+                          className="max-w-full h-auto shadow-2xl rounded-sm"
                           onLoad={handleImageLoad}
                         />
                         
                         {/* OCR Bounding Boxes */}
                         {showOverlays && !loading && results.length > 0 && imageDimensions.width > 0 && (
-                          <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                          <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden">
                             {results.map((res, i) => {
                               const scaleX = (imageRef.current?.clientWidth || 0) / imageDimensions.width;
                               const scaleY = (imageRef.current?.clientHeight || 0) / imageDimensions.height;
@@ -526,14 +484,22 @@ export default function App() {
                               const left = res.bbox.x0 * scaleX;
                               const top = res.bbox.y0 * scaleY;
 
+                              // Improved font size calculation: try to fill the box without being too tiny or massive
+                              const area = width * height;
+                              const charCount = res.translatedText?.length || 1;
+                              const baseSize = Math.sqrt(area / (charCount * 0.8)); // Heuristic for font size
+                              const calculatedFontSize = Math.max(7, Math.min(baseSize, height * 0.7, 24));
+
                               return (
-                                <div 
+                                <motion.div 
                                   key={i}
+                                  initial={{ opacity: 0, scale: 0.95 }}
+                                  animate={{ opacity: 1, scale: 1 }}
                                   className={cn(
-                                    "absolute transition-all pointer-events-auto flex items-center justify-center",
+                                    "absolute transition-all pointer-events-auto flex items-center justify-center overflow-hidden",
                                     viewMode === 'original' 
-                                      ? "border border-orange-500/30 bg-orange-500/10 hover:border-orange-500/60 cursor-help rounded-sm" 
-                                      : "border-none"
+                                      ? "border border-orange-500/40 bg-orange-500/5 hover:bg-orange-500/10 cursor-help rounded-sm" 
+                                      : "border-none shadow-sm"
                                   )}
                                   title={viewMode === 'original' ? `${res.text}` : `${res.translatedText}`}
                                   style={{
@@ -541,23 +507,26 @@ export default function App() {
                                     top,
                                     width,
                                     height,
-                                    backgroundColor: viewMode === 'translated' ? (res.bgColor || 'white') : undefined,
+                                    backgroundColor: viewMode === 'translated' ? 'white' : undefined,
+                                    zIndex: 10 + i,
                                   }}
                                 >
                                   {viewMode === 'translated' && res.translatedText && (
                                     <div 
-                                      className="w-[70.7%] h-[70.7%] flex items-center justify-center overflow-hidden"
-                                      style={{ backgroundColor: res.bgColor || 'white' }}
+                                      className="w-full h-full flex items-center justify-center p-0.5"
+                                      style={{ backgroundColor: 'white' }}
                                     >
                                       <span 
-                                        className="leading-tight text-orange-950 font-black text-center break-words hyphens-auto uppercase tracking-tighter"
-                                        style={{ fontSize: `${Math.min(height * 0.5, 14)}px` }}
+                                        className="text-gray-950 font-bold text-center break-words leading-[1.1] tracking-tight uppercase"
+                                        style={{ 
+                                          fontSize: `${calculatedFontSize}px`,
+                                        }}
                                       >
                                         {res.translatedText}
                                       </span>
                                     </div>
                                   )}
-                                </div>
+                                </motion.div>
                               );
                             })}
                           </div>
