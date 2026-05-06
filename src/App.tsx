@@ -14,7 +14,10 @@ import {
   Zap,
   ShieldCheck,
   Eye,
-  EyeOff
+  EyeOff,
+  Settings,
+  Settings2,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type as GeminiType } from "@google/genai";
@@ -46,9 +49,25 @@ export default function App() {
   const [isCopied, setIsCopied] = useState(false);
   const [showOverlays, setShowOverlays] = useState(true);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [apiKey, setApiKey] = useState<string>('');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('GEMINI_API_KEY');
+    if (savedKey) {
+      setApiKey(savedKey);
+    }
+  }, []);
+
+  const saveApiKey = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem('GEMINI_API_KEY', key);
+    setIsSettingsOpen(false);
+  };
 
   const processImage = useCallback(async (imageUrl: string, overrideDimensions?: { width: number, height: number }) => {
     setLoading(true);
@@ -62,15 +81,18 @@ export default function App() {
     const currentDimensions = overrideDimensions || imageDimensions;
 
     try {
-      if (!process.env.GEMINI_API_KEY) {
-        const msg = 'API Key Missing. Please set GEMINI_API_KEY in Settings.';
+      const activeApiKey = apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : undefined);
+      
+      if (!activeApiKey) {
+        const msg = 'API Key Missing. Please set your Gemini API key in Settings.';
         setStatus(msg);
         setErrorHeader(msg);
+        setIsSettingsOpen(true);
         throw new Error(msg);
       }
       setErrorHeader(null);
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: activeApiKey });
       const base64Data = imageUrl.split(',')[1];
       
       setProgress(50);
@@ -332,6 +354,17 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              className={cn(
+                "p-2 rounded-lg transition-colors border",
+                apiKey ? "text-gray-400 border-gray-100 hover:text-orange-500 hover:border-orange-100" : "text-orange-500 border-orange-200 bg-orange-50 animate-pulse"
+              )}
+              title="API Settings"
+            >
+              <Settings size={20} />
+            </button>
+
             {image && (
               <button 
                 onClick={copyToClipboard}
@@ -556,7 +589,80 @@ export default function App() {
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-orange-100/30 rounded-full blur-3xl opacity-50" />
         <div className="absolute top-1/2 -left-24 w-72 h-72 bg-blue-100/20 rounded-full blur-3xl opacity-30" />
       </div>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSettingsOpen(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center">
+                      <Settings2 size={20} />
+                    </div>
+                    <h2 className="text-xl font-bold">API Settings</h2>
+                  </div>
+                  <button onClick={() => setIsSettingsOpen(false)} className="text-gray-400 hover:text-gray-600">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Gemini API Key</label>
+                    <div className="relative">
+                      <input 
+                        type="password"
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        placeholder="Enter your API key..."
+                        className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all pr-10"
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                        <LockIndicator isSet={!!apiKey} />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">
+                      Your API key is stored locally in your browser and never sent to our servers.
+                      Get a free key from the <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-orange-500 hover:underline inline-flex items-center gap-0.5">Google AI Studio <ExternalLink size={10} /></a>.
+                    </p>
+                  </div>
+
+                  <button 
+                    onClick={() => saveApiKey(apiKey)}
+                    className="w-full h-12 bg-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-200 hover:bg-orange-600 active:scale-[0.98] transition-all"
+                  >
+                    Save API Key
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function LockIndicator({ isSet }: { isSet: boolean }) {
+  return (
+    <div className={cn(
+      "w-2 h-2 rounded-full",
+      isSet ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-gray-300"
+    )} />
   );
 }
 
