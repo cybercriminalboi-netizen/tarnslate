@@ -1,6 +1,6 @@
 {
-  "name": "VisionText OCR",
-  "description": "Powerful image-to-text extraction tool using Tesseract.js with precise coordinate mapping and visual overlays.",
+  "name": "VisionText CN",
+  "description": "Powerful image-to-text extraction and translation tool powered by Gemini 3 Flash. Specialized in Simplified Chinese with visual overlays.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

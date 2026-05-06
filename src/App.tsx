@@ -42,6 +42,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<string>('');
+  const [errorHeader, setErrorHeader] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [showOverlays, setShowOverlays] = useState(true);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
@@ -62,8 +63,12 @@ export default function App() {
 
     try {
       if (!process.env.GEMINI_API_KEY) {
-        throw new Error('Gemini API key is missing');
+        const msg = 'API Key Missing. Please set GEMINI_API_KEY in Settings.';
+        setStatus(msg);
+        setErrorHeader(msg);
+        throw new Error(msg);
       }
+      setErrorHeader(null);
 
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const base64Data = imageUrl.split(',')[1];
@@ -122,7 +127,20 @@ export default function App() {
         }
       });
 
-      const result = JSON.parse(response.text || '{}');
+      // Clean response text in case of markdown blocks
+      let cleanText = response.text || '';
+      if (cleanText.includes('```json')) {
+        cleanText = cleanText.split('```json')[1].split('```')[0].trim();
+      } else if (cleanText.includes('```')) {
+        cleanText = cleanText.split('```')[1].split('```')[0].trim();
+      }
+      
+      const result = JSON.parse(cleanText || '{}');
+      
+      if (!result.fullText && !result.textBlocks) {
+        throw new Error('Vision AI returned an empty or invalid response structure');
+      }
+
       setFullText(result.fullText || '');
       setTranslatedText(result.translatedText || '');
       
@@ -175,7 +193,9 @@ export default function App() {
       setStatus('Completed');
     } catch (error) {
       console.error('Vision AI Error:', error);
-      setStatus('Failed to process image');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setStatus(`Error: ${errorMessage}`);
+      setErrorHeader(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -279,6 +299,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FDFCFB] text-[#1a1a1a] font-sans selection:bg-orange-100 selection:text-orange-900">
+      {/* Error Header */}
+      {errorHeader && (
+        <div className="fixed bottom-6 right-6 z-[100] max-w-sm">
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-lg flex items-start gap-3"
+          >
+            <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center text-red-500 shrink-0">
+              <X size={16} />
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-red-900">Translation Error</h4>
+              <p className="text-xs text-red-700 mt-1 line-clamp-3">{errorHeader}</p>
+            </div>
+            <button onClick={() => setErrorHeader(null)} className="text-red-400 hover:text-red-600">
+              <X size={14} />
+            </button>
+          </motion.div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="border-b border-gray-100 bg-white/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
