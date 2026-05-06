@@ -1,0 +1,6 @@
+{
+  "name": "VisionText OCR",
+  "description": "Powerful image-to-text extraction tool using Tesseract.js with precise coordinate mapping and visual overlays.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
