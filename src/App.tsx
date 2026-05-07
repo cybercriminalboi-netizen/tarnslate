@@ -17,25 +17,12 @@ import {
   EyeOff,
   Settings,
   Settings2,
-  ExternalLink,
-  Camera
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI, Type as GeminiType } from "@google/genai";
+import { translateMangaImage, OCRResult } from './services/gemini';
 import { cn } from './lib/utils';
-
-interface OCRResult {
-  text: string;
-  translatedText?: string;
-  bgColor?: string;
-  bbox: {
-    x0: number;
-    y0: number;
-    x1: number;
-    y1: number;
-  };
-  confidence: number;
-}
+import { getStorage, setStorage } from './lib/storage';
 
 export default function App() {
   const [image, setImage] = useState<string | null>(null);
@@ -67,18 +54,21 @@ export default function App() {
 
   // Load settings on mount
   useEffect(() => {
-    const savedKey = localStorage.getItem('GEMINI_API_KEY');
-    if (savedKey) setApiKey(savedKey);
-    
-    const savedModel = localStorage.getItem('GEMINI_SELECTED_MODEL');
-    if (savedModel) setSelectedModel(savedModel);
+    const loadSettings = async () => {
+      const savedKey = await getStorage('GEMINI_API_KEY');
+      if (savedKey) setApiKey(savedKey);
+      
+      const savedModel = await getStorage('GEMINI_SELECTED_MODEL');
+      if (savedModel) setSelectedModel(savedModel);
+    };
+    loadSettings();
   }, []);
 
-  const saveSettings = (key: string, model: string) => {
+  const saveSettings = async (key: string, model: string) => {
     setApiKey(key);
     setSelectedModel(model);
-    localStorage.setItem('GEMINI_API_KEY', key);
-    localStorage.setItem('GEMINI_SELECTED_MODEL', model);
+    await setStorage('GEMINI_API_KEY', key);
+    await setStorage('GEMINI_SELECTED_MODEL', model);
     setIsSettingsOpen(false);
   };
 
@@ -90,7 +80,6 @@ export default function App() {
     setFullText('');
     setTranslatedText('');
 
-    // Use passed dimensions if available, otherwise fallback to state
     const currentDimensions = overrideDimensions || imageDimensions;
 
     try {
@@ -104,103 +93,23 @@ export default function App() {
         throw new Error(msg);
       }
       setErrorHeader(null);
-
-      const ai = new GoogleGenAI({ apiKey: activeApiKey });
-      const base64Data = imageUrl.split(',')[1];
       
       setProgress(50);
       setStatus('Translating content...');
 
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [
-          {
-            parts: [
-              {
-                inlineData: {
-                  mimeType: "image/jpeg",
-                  data: base64Data,
-                },
-              },
-              {
-                text: "Perform extremely accurate OCR on this image focusing only on the text characters within Simplified Chinese speech bubbles and captions.\n" +
-                      "1. Identify every individual text block. Extract the original Chinese text.\n" +
-                      "2. Provide a TIGHT 'bbox' as [ymin, xmin, ymax, xmax] in normalized coordinates (0-1000) that encloses ONLY the text characters. Do NOT include the speech bubble borders or background empty space.\n" +
-                      "3. Translate the text naturally into English.\n" +
-                      "4. Provide a 'fullText' transcription and a 'translatedText' summary.\n" +
-                      "Return only strict JSON.",
-              },
-            ],
-          },
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: GeminiType.OBJECT,
-            properties: {
-              fullText: { type: GeminiType.STRING },
-              translatedText: { type: GeminiType.STRING },
-              textBlocks: {
-                type: GeminiType.ARRAY,
-                items: {
-                  type: GeminiType.OBJECT,
-                  properties: {
-                    text: { type: GeminiType.STRING },
-                    translatedText: { type: GeminiType.STRING },
-                    bbox: { 
-                      type: GeminiType.ARRAY, 
-                      items: { type: GeminiType.NUMBER },
-                      description: "[ymin, xmin, ymax, xmax] in 0-1000 normalized range"
-                    }
-                  },
-                  required: ["text", "translatedText", "bbox"]
-                }
-              }
-            },
-            required: ["fullText", "translatedText", "textBlocks"]
-          }
-        }
-      });
+      const result = await translateMangaImage(
+        imageUrl,
+        activeApiKey,
+        selectedModel,
+        currentDimensions
+      );
 
-      // Clean response text in case of markdown blocks
-      let cleanText = response.text || '';
-      if (cleanText.includes('```json')) {
-        cleanText = cleanText.split('```json')[1].split('```')[0].trim();
-      } else if (cleanText.includes('```')) {
-        cleanText = cleanText.split('```')[1].split('```')[0].trim();
-      }
-      
-      const result = JSON.parse(cleanText || '{}');
-      
-      if (!result.fullText && !result.textBlocks) {
-        throw new Error('Vision AI returned an empty or invalid response structure');
-      }
-
-      setFullText(result.fullText || '');
-      setTranslatedText(result.translatedText || '');
+      setFullText(result.fullText);
+      setTranslatedText(result.translatedText);
+      setResults(result.results);
       
       if (result.translatedText) {
         setViewMode('translated');
-      }
-      
-      // Convert normalized 0-1000 coordinates to absolute pixels
-      const blocks = result.textBlocks || result.words || [];
-      if (blocks.length > 0 && currentDimensions.width > 0) {
-        const ocrResults: OCRResult[] = blocks.map((w: any) => ({
-          text: w.text,
-          translatedText: w.translatedText,
-          confidence: 100,
-          bgColor: 'white', // Default to pure white as requested
-          bbox: {
-            x0: (w.bbox[1] / 1000) * currentDimensions.width,
-            y0: (w.bbox[0] / 1000) * currentDimensions.height,
-            x1: (w.bbox[3] / 1000) * currentDimensions.width,
-            y1: (w.bbox[2] / 1000) * currentDimensions.height,
-          }
-        }));
-        setResults(ocrResults);
-      } else if (blocks.length === 0) {
-        console.warn('No text blocks returned from Vision AI');
       }
       
       setProgress(100);
@@ -213,46 +122,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [apiKey, imageDimensions]); // Added apiKey to dependency array
-
-  const captureScreen = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: "always" } as any,
-        audio: false
-      });
-      
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.play();
-
-      video.onloadedmetadata = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        
-        // Wait a bit for the first frame to render
-        setTimeout(async () => {
-          ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/png');
-          
-          setImage(dataUrl);
-          setResults([]);
-          setViewMode('original');
-          
-          // Stop all tracks
-          stream.getTracks().forEach(track => track.stop());
-          
-          // Automatically start processing
-          await processImage(dataUrl);
-        }, 500);
-      };
-    } catch (err) {
-      console.error("Error capturing screen: ", err);
-      setStatus("Capture cancelled or failed.");
-    }
-  };
+  }, [apiKey, imageDimensions, selectedModel]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -697,20 +567,6 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
-      
-      {/* Floating Action Button for Screen Capture */}
-      <motion.button
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-        onClick={captureScreen}
-        className="fixed bottom-8 right-8 z-[90] w-14 h-14 bg-orange-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-orange-600 transition-colors group"
-        title="Capture Screen to Translate"
-      >
-        <Camera size={24} className="group-hover:rotate-12 transition-transform" />
-        <span className="absolute right-16 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-          Capture & Translate
-        </span>
-      </motion.button>
     </div>
   );
 }

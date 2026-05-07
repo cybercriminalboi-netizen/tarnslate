@@ -1,16 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "VisionText CN",
+  "name": "Manga Translator Pro",
   "version": "1.0.0",
-  "description": "OCR and Translate Chinese text from images directly in your browser.",
+  "description": "Translate manhua/manga directly on the page.",
   "permissions": [
-    "storage"
+    "storage",
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
-    "https://generativelanguage.googleapis.com/*"
+    "https://*.google.com/*"
   ],
   "action": {
-    "default_popup": "index.html",
-    "default_title": "VisionText CN"
-  }
+    "default_popup": "index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/index.js"],
+      "css": ["src/content/styles.css"]
+    }
+  ]
 }

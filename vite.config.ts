@@ -10,6 +10,20 @@ export default defineConfig(({mode}) => {
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.NODE_ENV': JSON.stringify(mode),
+    },
+    build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          content: path.resolve(__dirname, 'src/content/index.tsx'),
+        },
+        output: {
+          entryFileNames: (assetInfo) => {
+            return assetInfo.name === 'content' ? 'src/content/index.js' : 'assets/[name]-[hash].js';
+          },
+        }
+      }
     },
     resolve: {
       alias: {
