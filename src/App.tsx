@@ -513,6 +513,19 @@ export default function App() {
 
                 <div className="space-y-6">
                   <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Chrome Extension</label>
+                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-[11px] leading-relaxed text-blue-800">
+                      <p className="font-semibold mb-1 italic">How to install & use:</p>
+                      <ul className="list-disc pl-4 space-y-1">
+                        <li>The build is automated via <strong>GitHub Actions</strong>.</li>
+                        <li>Push code to GitHub → Download <code>manga-translator-dist</code> artifact.</li>
+                        <li>Unzip & Load in Chrome: <code>chrome://extensions</code> (Developer Mode ON).</li>
+                        <li>A floating <span className="text-orange-600 font-bold underline">Magic Wand icon</span> will appear on any website.</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Model Selection</label>
                     <div className="grid grid-cols-1 gap-2">
                       {AVAILABLE_MODELS.map((m) => (
