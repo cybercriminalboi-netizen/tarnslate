@@ -17,7 +17,8 @@ import {
   EyeOff,
   Settings,
   Settings2,
-  ExternalLink
+  ExternalLink,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type as GeminiType } from "@google/genai";
@@ -50,22 +51,34 @@ export default function App() {
   const [showOverlays, setShowOverlays] = useState(true);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [apiKey, setApiKey] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.0-flash');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // Load API key from localStorage on mount
+  const AVAILABLE_MODELS = [
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (Experimental)', desc: 'Next-gen intelligence & speed • ~15 RPM / 1500 RPD' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', desc: 'Fast & balanced • 15 RPM / 1500 RPD' },
+    { id: 'gemini-2.0-flash-lite-preview-02-05', name: 'Gemini 2.0 Lite', desc: 'Lowest latency • 15 RPM / 1500 RPD' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', desc: 'High performance • 15 RPM / 1500 RPD' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', desc: 'Deep reasoning • 2 RPM / 50 RPD' },
+  ];
+
+  // Load settings on mount
   useEffect(() => {
     const savedKey = localStorage.getItem('GEMINI_API_KEY');
-    if (savedKey) {
-      setApiKey(savedKey);
-    }
+    if (savedKey) setApiKey(savedKey);
+    
+    const savedModel = localStorage.getItem('GEMINI_SELECTED_MODEL');
+    if (savedModel) setSelectedModel(savedModel);
   }, []);
 
-  const saveApiKey = (key: string) => {
+  const saveSettings = (key: string, model: string) => {
     setApiKey(key);
+    setSelectedModel(model);
     localStorage.setItem('GEMINI_API_KEY', key);
+    localStorage.setItem('GEMINI_SELECTED_MODEL', model);
     setIsSettingsOpen(false);
   };
 
@@ -99,7 +112,7 @@ export default function App() {
       setStatus('Translating content...');
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: selectedModel,
         contents: [
           {
             parts: [
@@ -201,6 +214,45 @@ export default function App() {
       setLoading(false);
     }
   }, [apiKey, imageDimensions]); // Added apiKey to dependency array
+
+  const captureScreen = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: "always" } as any,
+        audio: false
+      });
+      
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.play();
+
+      video.onloadedmetadata = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        
+        // Wait a bit for the first frame to render
+        setTimeout(async () => {
+          ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/png');
+          
+          setImage(dataUrl);
+          setResults([]);
+          setViewMode('original');
+          
+          // Stop all tracks
+          stream.getTracks().forEach(track => track.stop());
+          
+          // Automatically start processing
+          await processImage(dataUrl);
+        }, 500);
+      };
+    } catch (err) {
+      console.error("Error capturing screen: ", err);
+      setStatus("Capture cancelled or failed.");
+    }
+  };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -591,6 +643,29 @@ export default function App() {
 
                 <div className="space-y-6">
                   <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Model Selection</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {AVAILABLE_MODELS.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => setSelectedModel(m.id)}
+                          className={cn(
+                            "w-full p-3 text-left rounded-xl border transition-all flex flex-col gap-0.5",
+                            selectedModel === m.id 
+                              ? "border-orange-500 bg-orange-50 ring-1 ring-orange-500" 
+                              : "border-gray-200 hover:border-orange-200 hover:bg-gray-50"
+                          )}
+                        >
+                          <span className={cn("text-sm font-bold", selectedModel === m.id ? "text-orange-700" : "text-gray-700")}>
+                            {m.name}
+                          </span>
+                          <span className="text-[10px] text-gray-500">{m.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Gemini API Key</label>
                     <div className="relative">
                       <input 
@@ -611,10 +686,10 @@ export default function App() {
                   </div>
 
                   <button 
-                    onClick={() => saveApiKey(apiKey)}
+                    onClick={() => saveSettings(apiKey, selectedModel)}
                     className="w-full h-12 bg-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-200 hover:bg-orange-600 active:scale-[0.98] transition-all"
                   >
-                    Save API Key
+                    Save Settings
                   </button>
                 </div>
               </div>
@@ -622,6 +697,20 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+      
+      {/* Floating Action Button for Screen Capture */}
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={captureScreen}
+        className="fixed bottom-8 right-8 z-[90] w-14 h-14 bg-orange-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-orange-600 transition-colors group"
+        title="Capture Screen to Translate"
+      >
+        <Camera size={24} className="group-hover:rotate-12 transition-transform" />
+        <span className="absolute right-16 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+          Capture & Translate
+        </span>
+      </motion.button>
     </div>
   );
 }
