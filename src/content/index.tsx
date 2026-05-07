@@ -12,15 +12,30 @@ function initExtension() {
   const rootElement = document.createElement('div');
   shadow.appendChild(rootElement);
   
-  // Inject Tailwind if needed or standard styles
+  // Inject basic styles for the container and ensure icons work
   const style = document.createElement('style');
   style.textContent = `
     :host {
       all: initial;
-      position: fixed;
-      z-index: 2147483647;
-      bottom: 24px;
-      right: 24px;
+      position: fixed !important;
+      z-index: 2147483647 !important;
+      bottom: 32px !important;
+      right: 32px !important;
+      width: 56px !important;
+      height: 56px !important;
+      display: block !important;
+      pointer-events: auto !important;
+    }
+    svg {
+      display: block;
+      vertical-align: middle;
+    }
+    .animate-spin {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
   `;
   shadow.appendChild(style);

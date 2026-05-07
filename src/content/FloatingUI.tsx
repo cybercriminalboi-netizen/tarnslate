@@ -38,6 +38,9 @@ export const FloatingUI = () => {
         if (!ctx) continue;
         
         try {
+          // Attempt to bypass CORS for canvas capture if the site allows it
+          img.crossOrigin = "anonymous";
+          
           ctx.drawImage(img, 0, 0);
           const dataUrl = canvas.toDataURL('image/jpeg');
           

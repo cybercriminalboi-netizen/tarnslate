@@ -9,7 +9,7 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://*.google.com/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "index.html"

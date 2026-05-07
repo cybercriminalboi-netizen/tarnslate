@@ -3,7 +3,7 @@ export const getStorage = async (key: string): Promise<string | null> => {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
     return new Promise((resolve) => {
       chrome.storage.local.get([key], (result) => {
-        resolve(result[key] || null);
+        resolve((result[key] as string) || null);
       });
     });
   }
